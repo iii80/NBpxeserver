@@ -38,14 +38,13 @@ jobs:
         pip install nuitka zstandard ordered-set
 
     - name: Inject GC and Low-Memory Patch (x86 only)
-      # 【终极补丁】：直接劫持 zstandard 库，强制垃圾回收和单线程低内存模式
+      # 修复了编码问题：将 print 中的中文全部改为纯英文
       if: matrix.arch == 'x86'
       shell: python
       run: |
         import zstandard
         import pathlib
         
-        # 准确定位 zstandard 库的加载路径
         zstd_init = pathlib.Path(zstandard.__file__)
         
         patch_code = """
@@ -54,13 +53,12 @@ jobs:
         _OriginalCompressor = ZstdCompressor
         
         def _SafeZstdCompressor(*args, **kwargs):
-            print("\\n[PATCH] 执行你在找的魔法：强制垃圾回收，释放内存！...")
-            gc.collect()  # 真正释放 Nuitka 编译阶段遗留的大量内存！
+            print("\\n[PATCH] Executing GC to free memory...")
+            gc.collect()
             
-            # 锁定低内存模式与单线程（防止 GitHub Action 的 4 核 CPU 让内存需求乘以 4）
             kwargs['level'] = 5   
             kwargs['threads'] = 1 
-            print(f"[PATCH] 强行修改压缩参数为: {kwargs}\\n")
+            print(f"[PATCH] Forcing zstd args: {kwargs}\\n")
             
             return _OriginalCompressor(*args, **kwargs)
             
@@ -68,11 +66,10 @@ jobs:
         # --- NUITKA OOM PATCH END ---
         """
         
-        # 把补丁直接打进库文件的末尾
         with open(zstd_init, "a", encoding="utf-8") as f:
             f.write("\n" + patch_code + "\n")
             
-        print("内存释放 & 单线程劫持补丁注入成功！")
+        print("Patch successfully injected for x86!")
 
     - name: Compile with Nuitka
       run: >
